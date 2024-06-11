@@ -2,7 +2,8 @@
 
 {% block body %}
 
-    <h1>{{id}}</h1>
-
+    <h1>{{article.title}}</h1>
+    <small>{{id}}. Written by <b> {{article.author}} </b> on {{article.create_date}} </small>
+    <div>{{article.body | safe}} </div>
 
 {% endblock %}
