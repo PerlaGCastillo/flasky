@@ -17,7 +17,7 @@ app.config['MYSQL_CURSORCLASS'] = 'DictCursor'
 # mysql init
 mysql = MySQL(app)
 
-Articles = Articles()
+#Articles = Articles()
 
 @app.route('/')
 def index():
@@ -29,11 +29,24 @@ def about():
 
 @app.route('/articles')
 def articles():
-    return render_template('articles.html', articles=Articles)
+    cur = mysql.connection.cursor()
+    result = cur.execute("SELECT * FROM articles")
+    articles = cur.fetchall()
+    if result > 0:
+        return render_template('articles.html', articles=articles)
+    else:
+        msg = 'no articles found'
+        return render_template('articles.html', msg=msg)
+    cur.close()
 
 @app.route('/article/<string:id>')
 def article(id):
-    return render_template('article.html', id=id)
+    cur = mysql.connection.cursor()
+    result = cur.execute("SELECT * FROM articles WHERE id= %s", [id])
+    article = cur.fetchone()
+    return render_template('article.html', article=article, id=id)
+    cur.close()
+
 
 class RegisterForm(Form):
     name = StringField('Name', [validators.Length(min=1, max=50)])
@@ -56,13 +69,10 @@ def register():
 
     # create cursor
         cur = mysql.connection.cursor()
-
         # execute query
         cur.execute("INSERT INTO users(name, email, username, password) VALUES(%s, %s, %s, %s)", (name, email, username, password))
-
         # commit to db
         mysql.connection.commit()
-
         # close conn
         cur.close()
 
@@ -131,8 +141,16 @@ def logout():
 @app.route('/dashboard')
 @is_logged_in
 def dashboard():
-    return render_template('dashboard.html')
-
+    cur = mysql.connection.cursor()
+    #result = cur.execute("SELECT * FROM articles")
+    result = cur.execute("SELECT * FROM articles WHERE author = %s", [session['username']])
+    articles = cur.fetchall()
+    if result > 0:
+        return render_template('dashboard.html', articles=articles)
+    else:
+        msg = 'no articles found'
+        return render_template('dashboard.html', msg=msg)
+    cur.close()
 
 class ArticleForm(Form):
     title = StringField('Title', [validators.Length(min=1, max=255)])
@@ -147,16 +165,51 @@ def add_article():
         body = form.body.data
 
         cur = mysql.connection.cursor()
-        cur.execute("INSERT INTO articles(title, body, author) VALUES(%s, %s, %s)", (title, body, session['username']))
+        cur.execute("INSERT INTO articles(title, body, author) VALUES(%s, %s, %s)",(title, body, session['username']))
         mysql.connection.commit()
         cur.close()
-
         flash('article created', 'success')
         return redirect(url_for('dashboard'))
-
     return render_template('add_article.html', form=form)
 
-if __name__ == '__main__':
+@app.route('/edit_article/<string:id>', methods=['GET', 'POST'])
+@is_logged_in
+def edit_article(id):
+    cur = mysql.connection.cursor()
+    #get article by id
+    result = cur.execute("SELECT * FROM articles WHERE id = %s", [id])
+    article = cur.fetchone()
+    cur.close()
 
+    #get form
+    form = ArticleForm(request.form)
+    #populate article form fields
+    form.title.data = article['title']
+    form.body.data = article['body']
+
+    if request.method == 'POST' and form.validate():
+        title = request.form['title']
+        body = request.form['body']
+
+        cur = mysql.connection.cursor()
+        app.logger.info(title)
+        cur.execute("UPDATE articles SET title=%s, body=%s WHERE id=%s", (title, body, id))
+        mysql.connection.commit()
+        cur.close()
+        flash('article updated', 'success')
+        return redirect(url_for('dashboard'))
+    return render_template('edit_article.html', form=form)
+
+@app.route('/delete_article/<string:id>', methods=['POST'])
+@is_logged_in
+def delete_article(id):
+    cur = mysql.connection.cursor()
+    cur.execute("DELETE FROM articles WHERE id = %s", [id])
+    mysql.connection.commit()
+    cur.close()
+    flash('deleted article', 'success')
+    return redirect(url_for('dashboard'))
+
+if __name__ == '__main__':
     app.secret_key='secret123'
     app.run(debug=True)
